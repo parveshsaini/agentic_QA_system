@@ -8,6 +8,5 @@ data/airline_policy_vectordb
 data/stories_vectordb
 data/notices_vectordb
 
-src/agent_graph/__pycache__/*
-src/utils/__pycache__/*
-src/chatbot/__pycache__/*
+dataset/
+__pycache__/

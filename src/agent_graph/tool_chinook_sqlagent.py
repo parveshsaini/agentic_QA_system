@@ -8,6 +8,7 @@ from langchain_core.runnables import RunnablePassthrough
 from operator import itemgetter
 from langchain_core.tools import tool
 from agent_graph.load_tools_config import LoadToolsConfig
+from langchain_core.prompts import PromptTemplate
 
 TOOLS_CFG = LoadToolsConfig()
 
@@ -27,7 +28,7 @@ def get_tables(categories: List[Table]) -> List[str]:
     """Maps category names to corresponding SQL table names.
 
     Args:
-        categories (List[Table]): A list of `Table` objects representing different categories.
+        categories (List[Table]): A list of Table objects representing different categories.
 
     Returns:
         List[str]: A list of SQL table names corresponding to the provided categories.
@@ -95,7 +96,38 @@ class ChinookSQLAgent:
         category_chain = create_extraction_chain_pydantic(
             Table, self.sql_agent_llm, system_message=category_chain_system)
         table_chain = category_chain | get_tables  # noqa
-        query_chain = create_sql_query_chain(self.sql_agent_llm, self.db)
+        
+        # Create custom SQL query prompt template
+        query_template = """
+        Given an input question, create a syntactically correct {dialect} query to run.
+        
+        IMPORTANT: Do NOT add ORDER BY, LIMIT, or any sorting/limiting clauses to the query unless they are 
+        specifically requested in the user's question. Return results exactly as they are in the database
+        without modifying the final result set structure unless explicitly instructed.
+
+        Use the following tables:
+        {table_info}
+        
+        Only use the top {top_k} most relevant tables shown above.
+        
+        Remember:
+        1. Only use the tables and columns listed above.
+        2. Do not use tables or columns that do not exist.
+        3. Do NOT add ORDER BY or LIMIT clauses unless specifically mentioned in the user's question.
+        4. The query should be executable in SQLite.
+        
+        Question: {input}
+        """
+        
+        sql_prompt = PromptTemplate.from_template(query_template)
+        
+        # Create SQL query chain with custom prompt
+        query_chain = create_sql_query_chain(
+            self.sql_agent_llm, 
+            self.db,
+            prompt=sql_prompt
+        )
+        
         # Convert "question" key to the "input" key expected by current table_chain.
         table_chain = {"input": itemgetter("question")} | table_chain
         # Set table_names_to_use using table_chain.
